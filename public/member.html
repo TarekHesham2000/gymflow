@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>الجيم</title>
+<link rel="stylesheet" href="/static/app.css">
+<link id="manifest" rel="manifest">
+<meta name="theme-color" content="#0ea5e9" id="theme">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <div><h1 id="gname">...</h1><small>الزحمة دلوقتي</small></div>
+  <button class="ghost small hide" id="logout" style="color:#fff;border-color:#fff">خروج</button>
+</div></header>
+
+<main class="wrap pull">
+  <section class="card status" id="status" aria-live="polite">
+    <div class="muted">الجيم دلوقتي</div>
+    <div class="big" id="lvl">—</div>
+    <div class="sub" id="cnt"></div>
+    <div class="bar"><i id="barfill" style="width:0"></i></div>
+    <div class="tip hide" id="tip"></div>
+  </section>
+
+  <section class="card">
+    <h2>الزحمة على مدار النهاردة</h2>
+    <div class="chart" id="chart"></div>
+    <div class="axis" id="axis"></div>
+    <div class="legend"><span><i style="opacity:.35"></i>متوقع</span><span><i></i>فعلي</span></div>
+  </section>
+
+  <section class="card hide" id="meCard">
+    <h2>كارتي</h2>
+    <div class="qr"><div id="qr"></div><div class="code" id="mcode"></div>
+      <div class="muted" id="mname" style="margin-top:8px"></div>
+      <div style="margin-top:6px" id="mexp"></div>
+      <div class="muted" style="margin-top:6px">اعرض الكود ده عند الاستقبال في الدخول والخروج</div></div>
+  </section>
+
+  <section class="card">
+    <h2>الكلاسات الجاية</h2>
+    <div id="classes"><div class="muted">لا يوجد كلاسات</div></div>
+  </section>
+
+  <section class="card" id="loginCard">
+    <h2>دخول الأعضاء</h2>
+    <div class="muted">اتسجل في الجيم واسأل الاستقبال عن الكود بتاعك عشان تحجز كلاس.</div>
+    <form id="loginForm">
+      <label for="phone">رقم الموبايل</label>
+      <input id="phone" inputmode="tel" autocomplete="tel" required>
+      <label for="code">كود العضوية</label>
+      <input id="code" autocapitalize="characters" autocomplete="off" required style="text-transform:uppercase">
+      <div class="row"><button type="submit">دخول</button></div>
+    </form>
+  </section>
+</main>
+<div class="toast hide" id="toast"></div>
+
+<script>
+const slug = location.pathname.split('/')[2];
+const KEY = 'gf_member_' + slug;
+let token = localStorage.getItem(KEY) || '';
+let me = null, data = null;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const LV = { quiet: 'هادي', medium: 'متوسط', busy: 'زحمة' };
+const hourName = (h) => new Intl.DateTimeFormat('ar-EG', { hour: 'numeric', hour12: true, timeZone: 'UTC' }).format(new Date(Date.UTC(2000, 0, 1, h)));
+const when = (ms) => new Intl.DateTimeFormat('ar-EG', { weekday: 'long', hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Cairo' }).format(new Date(ms));
+const day = (ms) => new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Cairo' }).format(new Date(ms));
+
+function toast(msg, err) {
+  const t = $('toast'); t.textContent = msg; t.className = 'toast' + (err ? ' err' : '');
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hide'), 3500);
+}
+async function api(path, opt = {}) {
+  const r = await fetch('/api/' + slug + path, {
+    method: opt.method || 'GET',
+    headers: { 'content-type': 'application/json', ...(token ? { authorization: 'Bearer ' + token } : {}) },
+    body: opt.body ? JSON.stringify(opt.body) : undefined,
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || 'حصل خطأ'); e.status = r.status; throw e; }
+  return j;
+}
+
+function render() {
+  const d = data; if (!d) return;
+  document.documentElement.style.setProperty('--c', d.gym.color);
+  $('theme').content = d.gym.color;
+  $('gname').textContent = d.gym.name; document.title = d.gym.name;
+  $('manifest').href = `/g/${slug}/manifest.json`;
+
+  const L = d.live;
+  $('lvl').textContent = LV[L.level]; $('lvl').className = 'big lv-' + L.level;
+  $('cnt').textContent = `حوالي ${L.count} من ${L.capacity} (${L.pct}%)`;
+  const f = $('barfill'); f.style.width = Math.min(100, L.pct) + '%'; f.className = 'bg-' + L.level;
+
+  // chart: bars scaled to capacity; forecast is faded, actual solid
+  const cap = L.capacity;
+  $('chart').innerHTML = d.hourly.map((x) => {
+    const v = x.actual ?? x.predicted ?? 0, lvl = x.actualLevel || x.predictedLevel || 'quiet';
+    const isPred = x.actual == null;
+    const hgt = Math.max(3, Math.min(100, v / cap * 100));
+    return `<div class="col${x.h === d.now_hour ? ' now' : ''}" title="${hourName(x.h)}: ${v}"><div class="b bg-${lvl}${isPred ? ' pred' : ''}" style="height:${hgt}%"></div></div>`;
+  }).join('');
+  $('axis').innerHTML = d.hourly.map((x) => `<span>${x.h % 3 === 0 ? x.h : ''}</span>`).join('');
+
+  // tip: quietest forecast hour from now on
+  const future = d.hourly.filter((x) => x.h > d.now_hour && x.predicted != null);
+  const tip = $('tip');
+  if (future.length && L.level !== 'quiet') {
+    const best = future.reduce((a, b) => (b.predicted < a.predicted ? b : a));
+    tip.textContent = `أهدى وقت متوقع النهاردة: الساعة ${hourName(best.h)}`; tip.classList.remove('hide');
+  } else tip.classList.add('hide');
+
+  renderClasses();
+}
+
+function renderClasses() {
+  const list = data.classes;
+  const mine = new Set((me?.bookings || []).map((b) => b.id));
+  $('classes').innerHTML = list.length ? list.map((c) => {
+    const full = c.booked >= c.capacity, booked = mine.has(c.id);
+    const btn = !me ? '' : booked
+      ? `<button class="ghost small" data-cancel="${c.id}">إلغاء</button>`
+      : `<button class="small" data-book="${c.id}" ${full ? 'disabled' : ''}>${full ? 'مكتمل' : 'احجز'}</button>`;
+    return `<div class="item"><div><b>${esc(c.title)}</b><span class="muted">${esc(when(c.starts_at))}${c.coach ? ' • ' + esc(c.coach) : ''}</span><br>
+      <span class="pill ${full ? 'bad' : 'ok'}">${c.capacity - c.booked > 0 ? `متبقي ${c.capacity - c.booked} مكان` : 'مكتمل'}</span>${booked ? ' <span class="pill warn">انت حاجز</span>' : ''}</div>${btn}</div>`;
+  }).join('') : '<div class="muted">مفيش كلاسات قريبة</div>';
+}
+
+function renderMe() {
+  $('meCard').classList.toggle('hide', !me); $('loginCard').classList.toggle('hide', !!me); $('logout').classList.toggle('hide', !me);
+  if (!me) return;
+  $('qr').innerHTML = me.qr; $('mcode').textContent = me.code; $('mname').textContent = me.name;
+  $('mexp').innerHTML = me.active ? `<span class="pill ok">اشتراكك ساري لحد ${esc(day(me.expires_at))}</span>` : `<span class="pill bad">اشتراكك منتهي من ${esc(day(me.expires_at))}</span>`;
+}
+
+async function loadMe() {
+  if (!token) { me = null; return renderMe(); }
+  try { me = await api('/me'); } catch (e) { if (e.status === 401) { token = ''; localStorage.removeItem(KEY); } me = null; }
+  renderMe();
+}
+async function loadPublic() {
+  try { data = await api('/public'); render(); } catch (e) { if (e.status === 404) document.body.innerHTML = '<p style="padding:40px;text-align:center">الجيم ده مش موجود</p>'; }
+}
+
+$('classes').addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  try {
+    if (b.dataset.book) { await api(`/classes/${b.dataset.book}/book`, { method: 'POST' }); toast('تم الحجز ✓'); }
+    else if (b.dataset.cancel) { await api(`/classes/${b.dataset.cancel}/book`, { method: 'DELETE' }); toast('تم إلغاء الحجز'); }
+    await Promise.all([loadMe(), loadPublic()]);
+  } catch (err) { toast(err.message, true); }
+});
+$('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const r = await api('/member/login', { method: 'POST', body: { phone: $('phone').value, code: $('code').value } });
+    token = r.token; localStorage.setItem(KEY, token); await loadMe(); renderClasses(); toast('أهلاً بيك ✓');
+  } catch (err) { toast(err.message, true); }
+});
+$('logout').addEventListener('click', () => { token = ''; localStorage.removeItem(KEY); me = null; renderMe(); renderClasses(); });
+
+loadPublic().then(loadMe).then(renderClasses);
+setInterval(loadPublic, 20000); // live refresh
+</script>
+</body>
+</html>

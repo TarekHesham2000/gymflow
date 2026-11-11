@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لوحة الجيم</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <div><h1 id="gname">لوحة التحكم</h1><small>إدارة الجيم</small></div>
+  <button class="ghost small hide" id="logout" style="color:#fff;border-color:#fff">خروج</button>
+</div></header>
+
+<main class="wrap pull">
+  <!-- login -->
+  <section class="card" id="loginCard">
+    <h2>دخول الإدارة</h2>
+    <form id="loginForm">
+      <label for="pw">الباسورد</label>
+      <input id="pw" type="password" autocomplete="current-password" required>
+      <div class="row"><button type="submit">دخول</button></div>
+    </form>
+  </section>
+
+  <div id="app" class="hide">
+    <div class="tabs" id="tabs">
+      <button data-t="overview" class="on">نظرة عامة</button>
+      <button data-t="scan">سكانر الدخول</button>
+      <button data-t="members">الأعضاء</button>
+      <button data-t="classes">الكلاسات</button>
+    </div>
+
+    <!-- overview -->
+    <section id="t-overview">
+      <div class="card status">
+        <div class="muted">جوه الجيم دلوقتي</div>
+        <div class="big" id="ovLvl">—</div><div class="sub" id="ovCnt"></div>
+        <div class="bar"><i id="ovBar" style="width:0"></i></div>
+      </div>
+      <div class="grid2">
+        <div class="card stat"><span class="muted">دخلوا النهاردة</span><b id="stToday">0</b></div>
+        <div class="card stat"><span class="muted">أعضاء نشطين</span><b id="stActive">0</b></div>
+        <div class="card stat"><span class="muted">هتنتهي خلال 7 أيام</span><b id="stSoon">0</b></div>
+        <div class="card stat"><span class="muted">رابط صفحة الأعضاء</span><a id="pubLink" style="word-break:break-all;font-size:13px"></a></div>
+      </div>
+      <div class="card"><h2>آخر حركة</h2><div id="recent"></div></div>
+    </section>
+
+    <!-- scan -->
+    <section id="t-scan" class="hide">
+      <div class="card">
+        <h2>سكانر الدخول / الخروج</h2>
+        <div class="muted">امسح QR العضو أو اكتب الكود. نفس المسح بيسجل دخول، ولو العضو جوه بيسجل خروج.</div>
+        <form id="scanForm">
+          <label for="scanCode">كود العضو</label>
+          <input id="scanCode" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase" placeholder="ABC123">
+          <div class="row"><button type="submit">تسجيل</button><button type="button" class="ghost" id="camBtn">فتح الكاميرا</button></div>
+        </form>
+        <video id="cam" class="hide" playsinline muted></video>
+        <div id="scanRes"></div>
+      </div>
+    </section>
+
+    <!-- members -->
+    <section id="t-members" class="hide">
+      <div class="card">
+        <h2>عضو جديد</h2>
+        <form id="memForm">
+          <label for="mName">الاسم</label><input id="mName" required>
+          <label for="mPhone">رقم الموبايل</label><input id="mPhone" inputmode="tel" required>
+          <div class="grid2">
+            <div><label for="mPlan">الباقة</label><input id="mPlan" placeholder="شهري"></div>
+            <div><label for="mDays">المدة (أيام)</label><input id="mDays" type="number" value="30" min="1"></div>
+          </div>
+          <div class="row"><button type="submit">إضافة</button></div>
+        </form>
+        <div id="newMem"></div>
+      </div>
+      <div class="card"><h2>الأعضاء</h2><div id="memList"></div></div>
+    </section>
+
+    <!-- classes -->
+    <section id="t-classes" class="hide">
+      <div class="card">
+        <h2>كلاس جديد</h2>
+        <form id="clsForm">
+          <label for="cTitle">اسم الكلاس</label><input id="cTitle" required>
+          <label for="cCoach">المدرب</label><input id="cCoach">
+          <div class="grid2">
+            <div><label for="cWhen">الميعاد (بتوقيت القاهرة)</label><input id="cWhen" type="datetime-local" required></div>
+            <div><label for="cCap">عدد الأماكن</label><input id="cCap" type="number" value="15" min="1"></div>
+          </div>
+          <div class="row"><button type="submit">إضافة</button></div>
+        </form>
+      </div>
+      <div class="card"><h2>الكلاسات الجاية</h2><div id="clsList"></div></div>
+    </section>
+  </div>
+</main>
+<div class="toast hide" id="toast"></div>
+
+<script>
+const slug = location.pathname.split('/')[2];
+const KEY = 'gf_admin_' + slug;
+let token = localStorage.getItem(KEY) || '';
+let tab = 'overview', timer = null;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const LV = { quiet: 'هادي', medium: 'متوسط', busy: 'زحمة' };
+const fmt = (ms, o) => new Intl.DateTimeFormat('ar-EG', { timeZone: 'Africa/Cairo', ...o }).format(new Date(ms));
+const dt = (ms) => fmt(ms, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+const dd = (ms) => fmt(ms, { day: 'numeric', month: 'short', year: 'numeric' });
+const tm = (ms) => fmt(ms, { hour: 'numeric', minute: '2-digit' });
+
+function toast(msg, err) {
+  const t = $('toast'); t.textContent = msg; t.className = 'toast' + (err ? ' err' : '');
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hide'), 3500);
+}
+async function api(path, opt = {}) {
+  const r = await fetch('/api/' + slug + path, {
+    method: opt.method || 'GET',
+    headers: { 'content-type': 'application/json', ...(token ? { authorization: 'Bearer ' + token } : {}) },
+    body: opt.body ? JSON.stringify(opt.body) : undefined,
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || 'حصل خطأ'); e.status = r.status; e.body = j; throw e; }
+  return j;
+}
+function onErr(e) { if (e.status === 401) { logout(); } toast(e.message, true); }
+
+function logout() { token = ''; localStorage.removeItem(KEY); stopCam(); $('app').classList.add('hide'); $('loginCard').classList.remove('hide'); $('logout').classList.add('hide'); clearInterval(timer); }
+function showApp(gym) {
+  if (gym) { document.documentElement.style.setProperty('--c', gym.color); $('gname').textContent = gym.name; document.title = 'إدارة ' + gym.name; }
+  $('loginCard').classList.add('hide'); $('app').classList.remove('hide'); $('logout').classList.remove('hide');
+  setTab(tab);
+}
+
+$('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const r = await api('/admin/login', { method: 'POST', body: { password: $('pw').value } });
+    token = r.token; localStorage.setItem(KEY, token); sessionStorage.setItem(KEY + '_gym', JSON.stringify(r.gym)); $('pw').value = ''; showApp(r.gym);
+  } catch (err) { toast(err.message, true); }
+});
+$('logout').addEventListener('click', logout);
+
+// ---- tabs ----
+$('tabs').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setTab(b.dataset.t); });
+function setTab(t) {
+  tab = t;
+  for (const b of $('tabs').children) b.classList.toggle('on', b.dataset.t === t);
+  for (const id of ['overview', 'scan', 'members', 'classes']) $('t-' + id).classList.toggle('hide', id !== t);
+  clearInterval(timer);
+  if (t !== 'scan') stopCam();
+  if (t === 'overview') { loadOverview(); timer = setInterval(loadOverview, 15000); }
+  if (t === 'scan') $('scanCode').focus();
+  if (t === 'members') loadMembers();
+  if (t === 'classes') loadClasses();
+}
+
+// ---- overview ----
+async function loadOverview() {
+  try {
+    const o = await api('/admin/overview');
+    $('ovLvl').textContent = LV[o.live.level]; $('ovLvl').className = 'big lv-' + o.live.level;
+    $('ovCnt').textContent = `${o.live.count} من ${o.live.capacity} (${o.live.pct}%)`;
+    $('ovBar').style.width = Math.min(100, o.live.pct) + '%'; $('ovBar').className = 'bg-' + o.live.level;
+    $('stToday').textContent = o.today_checkins; $('stActive').textContent = o.active_members; $('stSoon').textContent = o.expiring_soon;
+    const url = location.origin + '/g/' + slug; $('pubLink').textContent = url; $('pubLink').href = url;
+    $('recent').innerHTML = o.recent.length ? o.recent.map((v) =>
+      `<div class="item"><div><b>${esc(v.name)}</b><span class="muted">دخل ${esc(tm(v.in_at))}${v.out_at ? ' • خرج ' + esc(tm(v.out_at)) : ''}</span></div>
+       <span class="pill ${v.out_at ? '' : 'ok'}">${v.out_at ? 'خرج' : 'جوه'}</span></div>`).join('') : '<div class="muted">لسه مفيش حركة</div>';
+  } catch (e) { onErr(e); }
+}
+
+// ---- scan ----
+let lastScan = { code: '', at: 0 };
+async function doScan(code) {
+  code = String(code || '').trim().toUpperCase(); if (!code) return;
+  if (code === lastScan.code && Date.now() - lastScan.at < 4000) return; // camera sees same QR repeatedly
+  lastScan = { code, at: Date.now() };
+  const res = $('scanRes');
+  try {
+    const r = await api('/admin/scan', { method: 'POST', body: { code } });
+    res.innerHTML = `<div class="scanres ${r.action}">${r.action === 'in' ? '✓ دخول' : '↩ خروج'} — ${esc(r.member.name)}
+      <div class="muted" style="font-weight:400">جوه الجيم دلوقتي: ${r.live.count} • اشتراك لحد ${esc(dd(r.member.expires_at))}</div></div>`;
+  } catch (e) {
+    if (e.status === 401) return onErr(e);
+    res.innerHTML = `<div class="scanres no">✗ ${esc(e.message)}${e.body?.member ? ' — ' + esc(e.body.member.name) : ''}</div>`;
+  }
+}
+$('scanForm').addEventListener('submit', async (e) => { e.preventDefault(); lastScan = { code: '', at: 0 }; await doScan($('scanCode').value); $('scanCode').value = ''; $('scanCode').focus(); });
+
+let stream = null, camTimer = null;
+function stopCam() { clearInterval(camTimer); if (stream) stream.getTracks().forEach((t) => t.stop()); stream = null; $('cam').classList.add('hide'); $('camBtn').textContent = 'فتح الكاميرا'; }
+$('camBtn').addEventListener('click', async () => {
+  if (stream) return stopCam();
+  if (!('BarcodeDetector' in window)) return toast('المتصفح مش بيدعم قراءة QR. اكتب الكود أو استخدم سكانر USB (بيكتب الكود ويدوس Enter).', true);
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const v = $('cam'); v.srcObject = stream; v.classList.remove('hide'); await v.play(); $('camBtn').textContent = 'قفل الكاميرا';
+    const det = new BarcodeDetector({ formats: ['qr_code'] });
+    camTimer = setInterval(async () => { try { const c = await det.detect(v); if (c[0]) doScan(c[0].rawValue); } catch {} }, 350);
+  } catch { toast('مقدرتش أفتح الكاميرا (محتاج صلاحية وHTTPS)', true); }
+});
+
+// ---- members ----
+async function loadMembers() {
+  try {
+    const list = await api('/admin/members'), now = Date.now();
+    $('memList').innerHTML = list.length ? list.map((m) => {
+      const ok = m.expires_at > now, soon = ok && m.expires_at - now < 7 * 864e5;
+      return `<div class="item"><div><b>${esc(m.name)} ${m.inside ? '<span class="pill ok">جوه</span>' : ''}</b>
+        <span class="muted">${esc(m.phone)} • كود <code class="k">${esc(m.code)}</code></span><br>
+        <span class="pill ${!ok ? 'bad' : soon ? 'warn' : 'ok'}">${ok ? 'ينتهي ' : 'انتهى '}${esc(dd(m.expires_at))}</span></div>
+        <button class="small ghost" data-renew="${m.id}">+30 يوم</button></div>`;
+    }).join('') : '<div class="muted">لسه مفيش أعضاء</div>';
+  } catch (e) { onErr(e); }
+}
+$('memList').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-renew]'); if (!b) return;
+  try { await api(`/admin/members/${b.dataset.renew}/renew`, { method: 'POST', body: { days: 30 } }); toast('تم التجديد ✓'); loadMembers(); } catch (err) { onErr(err); }
+});
+$('memForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const name = $('mName').value, phone = $('mPhone').value;
+    const r = await api('/admin/members', { method: 'POST', body: { name, phone: phone, plan: $('mPlan').value, days: $('mDays').value } });
+    const digits = phone.replace(/\D/g, '');
+    const intl = /^01\d{9}$/.test(digits) ? '2' + digits : digits; // Egyptian mobile -> international for WhatsApp
+    const msg = `أهلاً ${name} 👋\nكود عضويتك: ${r.code}\nشوف الزحمة واحجز كلاساتك من هنا: ${location.origin}/g/${slug}`;
+    $('newMem').innerHTML = `<div class="scanres in">تمت الإضافة — الكود: <code class="k">${esc(r.code)}</code>
+      <div style="margin-top:8px"><a class="btn" style="display:inline-block;text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${esc(intl)}?text=${encodeURIComponent(msg)}">إرسال على واتساب</a></div></div>`;
+    e.target.reset(); $('mDays').value = 30; loadMembers();
+  } catch (err) { onErr(err); }
+});
+
+// ---- classes ----
+async function loadClasses() {
+  try {
+    const list = await api('/admin/classes');
+    $('clsList').innerHTML = list.length ? list.map((c) =>
+      `<div class="item"><div><b>${esc(c.title)}</b><span class="muted">${esc(dt(c.starts_at))}${c.coach ? ' • ' + esc(c.coach) : ''}</span><br>
+       <span class="pill">${c.booked} / ${c.capacity} محجوز</span></div>
+       <button class="small danger" data-del="${c.id}">حذف</button></div>`).join('') : '<div class="muted">مفيش كلاسات</div>';
+  } catch (e) { onErr(e); }
+}
+$('clsList').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-del]'); if (!b || !confirm('تحذف الكلاس وكل الحجوزات؟')) return;
+  try { await api('/admin/classes/' + b.dataset.del, { method: 'DELETE' }); loadClasses(); } catch (err) { onErr(err); }
+});
+$('clsForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('/admin/classes', { method: 'POST', body: { title: $('cTitle').value, coach: $('cCoach').value, starts_at: $('cWhen').value, capacity: $('cCap').value } });
+    toast('تمت الإضافة ✓'); e.target.reset(); $('cCap').value = 15; loadClasses();
+  } catch (err) { onErr(err); }
+});
+
+// restore session
+if (token) {
+  let g = null; try { g = JSON.parse(sessionStorage.getItem(KEY + '_gym')); } catch {}
+  if (!g) fetch(`/api/${slug}/public`).then((r) => r.json()).then((p) => showApp(p.gym)).catch(() => showApp(null)); else showApp(g);
+} else fetch(`/api/${slug}/public`).then((r) => r.json()).then((p) => { if (p.gym) { document.documentElement.style.setProperty('--c', p.gym.color); $('gname').textContent = p.gym.name; } }).catch(() => {});
+</script>
+</body>
+</html>

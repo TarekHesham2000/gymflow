@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>إضافة جيم</title>
+<link rel="stylesheet" href="/static/app.css">
+<meta name="robots" content="noindex">
+</head>
+<body>
+<header class="top" style="--c:#111827"><div class="wrap"><div><h1>إضافة جيم جديد</h1><small>لوحة المالك</small></div></div></header>
+<main class="wrap pull">
+  <section class="card">
+    <form id="f">
+      <label for="key">المفتاح السري (SUPER_KEY)</label><input id="key" type="password" required>
+      <label for="name">اسم الجيم</label><input id="name" required>
+      <label for="slug">الرابط (إنجليزي بدون مسافات)</label><input id="slug" required pattern="[a-zA-Z0-9\-]{2,30}" placeholder="gold-gym">
+      <div class="grid2">
+        <div><label for="color">اللون</label><input id="color" type="color" value="#0ea5e9" style="padding:4px;height:46px"></div>
+        <div><label for="cap">السعة (أقصى عدد مريح)</label><input id="cap" type="number" value="50" min="5"></div>
+      </div>
+      <label for="pw">باسورد إدارة الجيم</label><input id="pw" type="text" required minlength="6">
+      <div class="row"><button>إنشاء</button></div>
+    </form>
+    <div id="out"></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+$('f').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const r = await fetch('/api/super/gyms', { method: 'POST', headers: { 'content-type': 'application/json', 'x-super-key': $('key').value },
+    body: JSON.stringify({ name: $('name').value, slug: $('slug').value, color: $('color').value, capacity: $('cap').value, password: $('pw').value }) });
+  const j = await r.json().catch(() => ({}));
+  $('out').innerHTML = r.ok
+    ? `<div class="scanres in">تم ✓<div class="muted" style="font-weight:400;margin-top:6px">صفحة الأعضاء: <a href="${esc(j.member_url)}">${esc(j.member_url)}</a><br>لوحة الإدارة: <a href="${esc(j.admin_url)}">${esc(j.admin_url)}</a></div></div>`
+    : `<div class="scanres no">${esc(j.error || 'خطأ')}</div>`;
+});
+</script>
+</body>
+</html>
